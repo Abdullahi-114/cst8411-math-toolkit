@@ -139,6 +139,7 @@ def add_code_block(doc, code):
     paragraph.paragraph_format.space_before = Pt(4)
     paragraph.paragraph_format.space_after = Pt(8)
     paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.paragraph_format.keep_together = True
     p_pr = paragraph._p.get_or_add_pPr()
     shading = OxmlElement("w:shd")
     shading.set(qn("w:fill"), CODE_FILL)
@@ -157,6 +158,46 @@ def add_bullet(doc, text):
 def add_numbered(doc, text):
     paragraph = doc.add_paragraph(style="List Number")
     paragraph.add_run(text)
+    return paragraph
+
+
+def add_numbered_group(doc, items):
+    numbering = doc.part.numbering_part.element
+    num_ids = [int(node.get(qn("w:numId"))) for node in numbering.findall(qn("w:num"))]
+    new_num_id = max(num_ids, default=0) + 1
+
+    style_num_id = doc.styles["List Number"]._element.pPr.numPr.numId.val
+    style_num = next(
+        node for node in numbering.findall(qn("w:num"))
+        if int(node.get(qn("w:numId"))) == int(style_num_id)
+    )
+    abstract_num_id = style_num.find(qn("w:abstractNumId")).get(qn("w:val"))
+
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), str(new_num_id))
+    abstract_ref = OxmlElement("w:abstractNumId")
+    abstract_ref.set(qn("w:val"), abstract_num_id)
+    num.append(abstract_ref)
+    level_override = OxmlElement("w:lvlOverride")
+    level_override.set(qn("w:ilvl"), "0")
+    start_override = OxmlElement("w:startOverride")
+    start_override.set(qn("w:val"), "1")
+    level_override.append(start_override)
+    num.append(level_override)
+    numbering.append(num)
+
+    for text in items:
+        paragraph = doc.add_paragraph(style="List Number")
+        num_pr = paragraph._p.get_or_add_pPr().get_or_add_numPr()
+        num_pr.get_or_add_ilvl().val = 0
+        num_pr.get_or_add_numId().val = new_num_id
+        paragraph.add_run(text)
+
+
+def add_compact_bullet(doc, text):
+    paragraph = add_bullet(doc, text)
+    paragraph.paragraph_format.space_after = Pt(1)
+    paragraph.paragraph_format.line_spacing = 1.0
     return paragraph
 
 
@@ -375,12 +416,11 @@ def build_document():
 
     doc.add_heading("4. Add the Library as a Dependency", level=1)
     doc.add_heading("Option A - Direct JAR dependency", level=2)
-    for step in (
+    add_numbered_group(doc, (
         "Create a lib directory in the consuming Java project.",
         "Copy math-toolkit-1.0.0.jar into the lib directory.",
         "Add the JAR to the compile and runtime classpath.",
-    ):
-        add_numbered(doc, step)
+    ))
     add_code_block(
         doc,
         'javac -cp "lib\\math-toolkit-1.0.0.jar" MyApplication.java\n'
@@ -466,19 +506,19 @@ def build_document():
     )
 
     doc.add_heading("9. Build and Test from Source", level=1)
-    for step in (
+    add_numbered_group(doc, (
         "Clone or download the repository.",
         "Open PowerShell in the project root.",
         "Run .\\build.ps1.",
         "Confirm that all 12 checks pass and the dist directory is created.",
-    ):
-        add_numbered(doc, step)
+    ))
     add_code_block(doc, ".\\build.ps1")
     doc.add_paragraph(
         "The script compiles with --release 17, packages the executable and source JARs, runs the dependency-free tests, and writes SHA-256 checksums."
     )
 
-    doc.add_heading("10. Versioning and Maintenance", level=1)
+    version_heading = doc.add_heading("10. Versioning and Maintenance", level=1)
+    version_heading.paragraph_format.page_break_before = True
     doc.add_paragraph(
         "The project uses semantic versioning. Version 1.0.0 is the initial stable release. Future bug fixes should increment the patch number, backward-compatible features should increment the minor number, and breaking API changes should increment the major number."
     )
@@ -486,7 +526,9 @@ def build_document():
     add_bullet(doc, "Review release notes before upgrading to a new major version.")
     add_bullet(doc, "Verify checksums whenever release artifacts are downloaded.")
 
-    doc.add_heading("11. Submission Checklist", level=1)
+    checklist_heading = doc.add_heading("11. Submission Checklist", level=1)
+    checklist_heading.paragraph_format.space_before = Pt(8)
+    checklist_heading.paragraph_format.space_after = Pt(5)
     for item in (
         "Deployable executable JAR is present in dist.",
         "Manifest contains the Main-Class entry.",
@@ -494,7 +536,7 @@ def build_document():
         "Source and usage documentation are included.",
         "Repository and version 1.0.0 release links are accessible.",
     ):
-        add_bullet(doc, item)
+        add_compact_bullet(doc, item)
 
     doc.core_properties.title = "CST8411 Math Toolkit User Guide"
     doc.core_properties.subject = "Assignment 1 - Deployable JAR"
